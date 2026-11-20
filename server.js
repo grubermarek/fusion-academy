@@ -13297,6 +13297,69 @@ app.post('/api/service/platba-prelozit', async(req,res)=>{
 // Antálková). Stáva sa, že permanentku kúpi jedna a chodí druhá, prípadne si ju klientka
 // kúpi na zlý účet. Peniaze sa nikam nevracajú a v účtovníctve sa nemení nič — mení sa len
 // to, komu vstupy patria. Do auditu sa zapíše stav pred aj po.
+// Hromadné označenie nevybratého vstupného (Marek 20. 11. 2026: „označ ako zaplatené").
+// Klientka si pri rezervácii vyberie „zaplatím na mieste", tréner peniaze vezme, ale
+// v appke to neoznačí — a rezervácia tak visí ako dlh. Pozor na dve veci:
+//  1. v ten istý deň už môže byť tržba zapísaná inou cestou (predaj trénerom, karta) —
+//     vtedy sa rezervácia len označí a NOVÁ tržba sa nepíše, inak by sa peniaze rátali dvakrát;
+//  2. tržba patrí ku dňu hodiny, nie k dnešku, aby nerozhádzala uzavreté mesiace.
+// Doklad sa vystavuje potichu (bez mailu) — hromadné maily chodia len s osobitným súhlasom.
+app.post('/api/service/vstupne-oznacit', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const ids = Array.isArray(req.body.booking_ids) ? req.body.booking_ids.map(String) : null;
+    const maxSuma = +req.body.max_suma > 0 ? +req.body.max_suma : null;
+    const vsetky = (await q.find(db.bookings,{pay_on_site:true}))
+      .filter(b => !b.entry_collected && (b.status==='attended' || b.attendance_status==='attended'))
+      .filter(b => !ids || ids.includes(String(b._id)))
+      .filter(b => !maxSuma || (+b.pay_amount||0) <= maxSuma)
+      .sort((a,b)=>String(a.booking_date||'').localeCompare(String(b.booking_date||'')));
+
+    const plan = [];
+    for(const b of vsetky){
+      const suma = +b.pay_amount || 0;
+      const u = b.user_id ? await q.one(db.users,{_id:b.user_id}) : null;
+      // Je tržba za tento deň už zapísaná? (predaj trénerom, karta, kiosk…)
+      const den = String(b.booking_date||'').slice(0,10);
+      const uz = (await q.find(db.transactions,{user_id:b.user_id})).find(t=>{
+        const td = String(t.date || t.created_at || '').slice(0,10);
+        return Math.abs(Date.parse(td+'T12:00:00Z') - Date.parse(den+'T12:00:00Z')) <= 2*864e5
+          && Math.abs((+t.amount||0) - suma) < 0.01;
+      });
+      plan.push({ booking_id:b._id, klientka:u?.name||b.user_name||'?', den, hodina:b.class_name||'',
+        suma, plan_id:b.pay_plan||null, uz_zaplatene: uz ? (uz.date||String(uz.created_at).slice(0,10)) : null });
+    }
+    const novych = plan.filter(x=>!x.uz_zaplatene);
+    const suhrn = { rezervacii:plan.length, len_oznacim:plan.length-novych.length,
+      zapisem_trzbu:novych.length, nova_trzba_eur:+novych.reduce((a,x)=>a+x.suma,0).toFixed(2) };
+    if(req.body.apply!==true) return res.json({ok:true, apply:false, suhrn, plan});
+
+    let oznacene=0, trzby=0, eur=0;
+    for(const x of plan){
+      const b = await q.one(db.bookings,{_id:x.booking_id});
+      if(!b || b.entry_collected) continue;
+      await q.update(db.bookings,{_id:b._id},{$set:{ entry_collected:true, pay_on_site:false,
+        entry_collected_at:nowISO(), entry_collected_by:'service', entry_collected_note:String(req.body.dovod||'Doplnené spätne') }});
+      oznacene++;
+      if(x.uz_zaplatene) continue;                       // tržbu už máme — nezdvojuj
+      const u = b.user_id ? await q.one(db.users,{_id:b.user_id}) : null;
+      const popis = (b.pay_plan && MEMBERSHIP_PLANS[b.pay_plan]?.name) || ('Jednorazový vstup — '+(b.class_name||'hodina'));
+      await q.insert(db.transactions,{ type: b.pay_plan && MEMBERSHIP_PLANS[b.pay_plan]?.type!=='bundle' ? 'membership' : 'single_entry',
+        user_id:b.user_id, user_name:u?.name||b.user_name||'', amount:x.suma, date:x.den, month:x.den.slice(0,7),
+        payment_method:'cash', method:'cash', note:popis+' (hotovosť na mieste, doplnené '+today()+')',
+        plan_id:b.pay_plan||null, booking_id:b._id, created_at:nowISO() });
+      await q.insert(db.payouts,{ _type:'cash_collected', trainer_id:null, trainer_name:'Štúdio',
+        amount:x.suma, note:popis+' — '+(u?.name||''), month:x.den.slice(0,7), date:x.den, status:'held', created_at:nowISO() });
+      if(u) createInvoice({ user_id:u._id, client_name:u.name, client_email:u.email, items:[{desc:popis, qty:1, total:x.suma}],
+        total:x.suma, method:'Hotovosť', issued_at:x.den, paid_at:x.den, silent:true }).catch(()=>{});
+      trzby++; eur += x.suma;
+    }
+    await auditLog(req,'entry_collect_bulk','',{rezervacii:plan.length},{oznacene, trzby, eur:+eur.toFixed(2)},String(req.body.dovod||''));
+    console.log('💵 Vstupné označené ako zaplatené: '+oznacene+' rezervácií, nových tržieb '+trzby+' ('+eur.toFixed(2)+' €)');
+    res.json({ok:true, apply:true, oznacene, nove_trzby:trzby, nove_trzby_eur:+eur.toFixed(2)});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // Oprava e-mailu na účte (Marek 20. 11. 2026). E-mail je zároveň prihlasovacie meno, takže
 // zmena musí nechať stopu v audite a klientka o nej musí vedieť — inak sa raz nevie prihlásiť
 // a nikto netuší prečo. Bez `apply:true` je to suchý náhľad; starý e-mail ukazuje skrátene.
