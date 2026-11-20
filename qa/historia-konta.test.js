@@ -25,6 +25,7 @@ const riadky = arr => arr.map(o => JSON.stringify(o)).join('\n') + '\n';
 const iso = p => new Date(Date.now() + p * 864e5).toISOString();
 const sk = ms => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Bratislava' }).format(new Date(ms));
 const ZAJTRA = sk(Date.now() + 864e5), DNES = sk(Date.now()), MINULE = sk(Date.now() - 14 * 864e5);
+const POZAJTRA = sk(Date.now() + 2 * 864e5);
 const DOW = new Date(ZAJTRA + 'T12:00:00Z').getUTCDay();
 
 (async () => {
@@ -41,6 +42,8 @@ const DOW = new Date(ZAJTRA + 'T12:00:00Z').getUTCDay();
     { _id: 'qaHiMem00000002', user_id: 'qaHiPerm00000001', plan_id: 'permanentka10', plan_name: 'Permanentka 10', price: 80, status: 'bundle', started_at: iso(-30), expires_at: iso(60), created_at: iso(-30) },
   ]));
   fs.writeFileSync(path.join(DATA, 'classes.db'), riadky([
+    { _id: 'qaHiHodina00002', name: 'Zumba', category: 'Zumba', location: 'Detva', day_of_week: new Date(POZAJTRA + 'T12:00:00Z').getUTCDay(), time_start: '19:00', time_end: '20:00', capacity: 30, price: 10,
+      emoji: '💃', active: true, instructor: 'Tina Trénerka', instructor_id: 'qaHiTrener00001', created_at: '2026-01-01' },
     { _id: 'qaHiHodina00001', name: 'Zumba', category: 'Zumba', location: 'Detva', day_of_week: DOW, time_start: '19:00', time_end: '20:00', capacity: 30, price: 10,
       emoji: '💃', active: true, instructor: 'Tina Trénerka', instructor_id: 'qaHiTrener00001', created_at: '2026-01-01' },
   ]));
@@ -131,6 +134,25 @@ const DOW = new Date(ZAJTRA + 'T12:00:00Z').getUTCDay();
     // ── stránka histórie
     const stranka = await fetch(BASE + '/historia', { headers: { Cookie: cPerm } });
     t('stránka /historia sa načíta', stranka.status === 200 && /História konta/.test(await stranka.text()), String(stranka.status));
+
+    // ── zrušenie rezervácie so vrátením vstupu (klientka sa omylom prihlásila inam)
+    const predZrusenim = (await get('/api/me/historia-konta', cPerm)).d.vstupy;
+    const rezervacia2 = await post('/api/bookings', { class_id: 'qaHiHodina00002', booking_date: POZAJTRA }, cPerm);
+    t('klientka sa znova prihlásila (na zrušenie)', rezervacia2.status === 200 && rezervacia2.d && rezervacia2.d.ok !== false, JSON.stringify(rezervacia2.d).slice(0, 120));
+    const bk = Object.values(JSON.parse('[' + fs.readFileSync(path.join(DATA, 'bookings.db'), 'utf8').trim().split('\n').join(',') + ']')
+      .reduce((a, r) => (a[r._id] = r, a), {})).find(b => b.user_id === 'qaHiPerm00000001' && b.booking_date === POZAJTRA && b.status === 'confirmed');
+    t('vstup sa pri prihlásení strhol', (await get('/api/me/historia-konta', cPerm)).d.vstupy === predZrusenim - 1, '');
+    const nahladZ = await servis('/api/service/rezervacia-zrusit', { booking_id: bk._id, dovod: 'Omylom prihlásená na iné mesto.' });
+    t('náhľad zrušenia povie, čo vráti', nahladZ.status === 200 && nahladZ.d.apply === false && /permanentky/.test(nahladZ.d.nahlad.vratime), JSON.stringify(nahladZ.d).slice(0, 180));
+    t('náhľad nič nezrušil', (await get('/api/me/historia-konta', cPerm)).d.vstupy === predZrusenim - 1, '');
+    const zrus2 = await servis('/api/service/rezervacia-zrusit', { booking_id: bk._id, dovod: 'Omylom prihlásená na iné mesto.', apply: true });
+    t('zrušenie vrátilo vstup', zrus2.status === 200 && /permanentky/.test(zrus2.d.vratene || ''), JSON.stringify(zrus2.d).slice(0, 140));
+    const poZruseni = await get('/api/me/historia-konta', cPerm);
+    t('zostatok je späť na pôvodnom čísle', poZruseni.d.vstupy === predZrusenim, predZrusenim + ' → ' + poZruseni.d.vstupy);
+    const riadokZ = (poZruseni.d.riadky || []).find(r => r.typ === 'vstupy' && r.zmena === 1 && /Omylom/.test(r.text || ''));
+    t('v histórii je dôvod vrátenia', !!riadokZ, JSON.stringify((poZruseni.d.riadky || [])[0]));
+    t('druhé zrušenie tej istej rezervácie neprejde', (await servis('/api/service/rezervacia-zrusit', { booking_id: bk._id, apply: true })).status === 400, '');
+    t('bez tokenu sa rezervácia zrušiť nedá', (await (await fetch(BASE + '/api/service/rezervacia-zrusit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ booking_id: bk._id }) })).status) === 404, '');
   } catch (e) {
     zle++; console.log('  ❌ výnimka: ' + (e.stack || e.message));
   } finally {

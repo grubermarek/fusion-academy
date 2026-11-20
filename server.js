@@ -13297,6 +13297,47 @@ app.post('/api/service/platba-prelozit', async(req,res)=>{
 // Antálková). Stáva sa, že permanentku kúpi jedna a chodí druhá, prípadne si ju klientka
 // kúpi na zlý účet. Peniaze sa nikam nevracajú a v účtovníctve sa nemení nič — mení sa len
 // to, komu vstupy patria. Do auditu sa zapíše stav pred aj po.
+// Zrušenie rezervácie so vrátením toho, čím bola krytá (Marek 20. 11. 2026 — klientka sa
+// omylom prihlásila na hodinu v inom meste). Klientka si to vie zrušiť aj sama, ale keď je
+// už po termíne alebo si to všimne neskoro, treba to spraviť za ňu — a hlavne jej to vrátiť
+// tak, aby bolo v histórii konta vidieť, čo a prečo sa vrátilo.
+// Bez `apply:true` je to suchý náhľad.
+app.post('/api/service/rezervacia-zrusit', async(req,res)=>{
+  if(!servisToken(req)) return res.status(404).end();
+  try{
+    const b = await q.one(db.bookings,{_id:String(req.body.booking_id||'')});
+    if(!b) return res.status(404).json({error:'Rezervácia nenájdená'});
+    if(String(b.status||'').startsWith('cancelled')) return res.status(400).json({error:'Rezervácia je už zrušená ('+b.status+')'});
+    const u = b.user_id ? await q.one(db.users,{_id:b.user_id}) : null;
+    const dovod = String(req.body.dovod||'').trim() || 'Rezerváciu sme zrušili.';
+    const vratit = req.body.vratit !== false;
+    const KRYTIE = { single_entry:['single_entries','vstup z permanentky'], free_credit:['free_credits','hodinu zdarma'] };
+    const krytie = KRYTIE[b.access_method] || null;
+
+    const nahlad = { klientka:u?.name||b.user_name||'?', hodina:(b.class_name||'')+' · '+(b.class_location||''), den:b.booking_date,
+      stav:b.status+'/'+(b.attendance_status||'-'), krytie:b.access_method||'-',
+      vratime: (vratit && krytie) ? krytie[1] : (vratit ? 'nie je čo vracať ('+(b.access_method||'-')+')' : 'nič — vrátenie vypnuté') };
+    if(req.body.apply!==true) return res.json({ok:true, apply:false, nahlad});
+
+    await q.update(db.bookings,{_id:b._id},{$set:{ status:'cancelled', attendance_status:'cancelled',
+      cancelled_at:nowISO(), cancel_reason:dovod.slice(0,200), cancelled_by:'service' }});
+    let vratene = null;
+    if(vratit && krytie && b.user_id){
+      await zmenKonto(b.user_id, krytie[0], 1, dovod, { hodina:(b.class_name||'')+(b.class_location?' · '+b.class_location:''), den:b.booking_date, booking_id:b._id });
+      vratene = krytie[1];
+    }
+    if(b.user_id) await q.insert(db.notifications,{ user_id:b.user_id, type:'booking',
+      title: vratene ? '↩️ Vrátili sme ti '+vratene : '✅ Rezerváciu sme zrušili',
+      body: dovod + (vratene ? ' '+(vratene[0].toUpperCase()+vratene.slice(1))+' máš späť na konte — nájdeš to v histórii konta.' : ''),
+      read:false, created_at:nowISO() }).catch(()=>{});
+    await auditLog(req,'booking_cancel_service',b._id,{stav:b.status, krytie:b.access_method},{vratene:vratene||null},dovod);
+    console.log('↩️ Zrušená rezervácia: '+(u?.name||'')+' '+b.booking_date+' '+(b.class_name||'')+(vratene?(' — vrátené: '+vratene):''));
+    const po = b.user_id ? await q.one(db.users,{_id:b.user_id}) : null;
+    res.json({ ok:true, apply:true, klientka:u?.name||null, den:b.booking_date, vratene,
+      vstupy: po?.single_entries ?? null, hodiny_zdarma: po?.free_credits ?? null });
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/service/entries-move', async(req,res)=>{
   if(!servisToken(req)) return res.status(404).end();
   try{
